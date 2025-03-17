@@ -13,7 +13,7 @@ dtype = None
 load_in_4bit = True 
 
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = "unsloth/Llama-3.2-1B-Instruct-bnb-4bit",
+    model_name = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
     max_seq_length = max_seq_length,
     dtype = dtype,
     load_in_4bit = load_in_4bit,
@@ -80,7 +80,7 @@ trainer = SFTTrainer(
         num_train_epochs=3,
         warmup_ratio=0.03,
         gradient_checkpointing=True,              # use gradient checkpointing to save memory
-        save_steps=5000,
+        save_steps=3000,
         max_grad_norm=0.3,                        # max gradient norm based on QLoRA paper
         group_by_length=True, # group batches of similar length together
         eval_strategy="epoch",
@@ -90,12 +90,12 @@ trainer = SFTTrainer(
         learning_rate = 2e-4,
         fp16 = not is_bfloat16_supported(),
         bf16 = is_bfloat16_supported(),
-        logging_steps = 200, # increase for training runs
+        logging_steps = 100, # increase for training runs
         optim = "adamw_8bit",
         weight_decay = 0.001, # 0.001 for training runs
         lr_scheduler_type = "linear",
         seed = 3407,
-        output_dir = "./outputs/1B",
+        output_dir = "./outputs",
         report_to = "none", 
     ),
 )
@@ -121,25 +121,25 @@ print(f"Peak reserved memory for training = {used_memory_for_lora} GB.")
 print(f"Peak reserved memory % of max memory = {used_percentage} %.")
 print(f"Peak reserved memory for training % of max memory = {lora_percentage} %.")
 
-model.save_pretrained("PH-LLM-Llama-3.2-1B-Instruct")
-tokenizer.save_pretrained("PH-LLM-Llama-3.2-1B-Instruct")
+model.save_pretrained("PH-LLM-Llama-3.2-3B-Instruct")
+tokenizer.save_pretrained("PH-LLM-Llama-3.2-3B-Instruct")
 
 # Push only the adapters
-model.push_to_hub("johnjehiel/PH-LLM-Llama-3.2-1B-Instruct", token=HF_TOKEN)
-tokenizer.push_to_hub("johnjehiel/PH-LLM-Llama-3.2-1B-Instruct", token=HF_TOKEN)
+model.push_to_hub("johnjehiel/PH-LLM-Llama-3.2-3B-Instruct", token=HF_TOKEN)
+tokenizer.push_to_hub("johnjehiel/PH-LLM-Llama-3.2-3B-Instruct", token=HF_TOKEN)
 
 # MERGE AND PUSH ONLY AFTER THE MODEL IS FINE-TUNED WITH ALL 5 BATCHES OF TRAINING DATA
-new_model_online = "johnjehiel/PH-LLM-Llama-3.2-1B-Instruct"
+new_model_online = "johnjehiel/PH-LLM-Llama-3.2-3B-Instruct"
 model.push_to_hub_merged(
     new_model_online, 
     tokenizer, 
     save_method="merged_4bit_forced",  # Use "merged_4bit" if you prefer 4-bit precision
-    commit_message="Merged base model and LoRA adapters for fine-tuned Llama 3.2 1B Instruct",
+    commit_message="Merged base model and LoRA adapters for fine-tuned Llama 3.2 3B Instruct",
     token=HF_TOKEN
 )
 
 loaded_model, loaded_tokenizer = FastLanguageModel.from_pretrained(
-    model_name = "johnjehiel/PH-LLM-Llama-3.2-1B-Instruct",
+    model_name = "johnjehiel/PH-LLM-Llama-3.2-3B-Instruct",
     max_seq_length = max_seq_length,
     dtype = dtype,
     load_in_4bit = load_in_4bit,
