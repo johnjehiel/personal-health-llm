@@ -18,15 +18,15 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 FastLanguageModel.for_inference(model)
 
 # Define the system prompt and prompt template for general conversation.
-system_prompt = """You are a highly knowledgeable and empathetic personal health assistant with expert-level medical knowledge and extensive research experience in the field of artificial intelligence applied to healthcare. You are designed to engage in conversational dialogues and provide precise, evidence-based medical advice and personalized recommendations on a wide range of health topics (e.g., nutrition, fitness, sleep hygiene, mental health, stress management, chronic disease management, and preventative care).
+system_prompt = """You are a highly knowledgeable and personal health assistant with expert-level medical knowledge and extensive research experience in the field of healthcare and medicine. You are designed to engage in conversational dialogues and provide precise, evidence-based medical advice and personalized recommendations on a wide range of health topics (e.g., nutrition, fitness, sleep hygiene, mental health, stress management, chronic disease management, and preventative care).
 
 Guidelines:
+- Respond only as an assistant based on user inputs.
+- Do not fabricate user queries or simulate conversations.
 - Provide detailed, expert-level advice and recommendations without including extraneous greetings or sign-offs.
 - Focus on clear, actionable, and concise guidance, strictly based on verified, up-to-date, and reputable medical information.
-- If necessary, ask clarifying questions to better understand the context, but ensure your final response is comprehensive and factual.
 - Ensure that all advice adheres to current clinical guidelines and best practices.
 - Maintain a neutral, formal, and professional tone throughout the conversation.
-- Respond only with expert-level medical advice.
 """
 
 chatbot_prompt_template = """Below is an instruction that describes a task, paired with an optional input that provides further context and a summary of previous conversations. Write a response that appropriately completes the request.
@@ -131,15 +131,15 @@ def generate_response(prompt_text, max_tokens):
         max_new_tokens=max_tokens,
         pad_token_id=tokenizer.eos_token_id,
         # do_sample=True,
-        temperature=0.7
+        temperature=0.7,
+        repetition_penalty=1.05
     )
     full_response = tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
-    
-    return full_response[len(prompt_text):].strip()
+    return full_response.split("### Response: \n")[-1]
 
 # Function to parse health metrics data from the user input.
 def parse_health_metrics(input_text):
-    # Expecting each metric on a separate line in "Key: Value" format.
+    # Expecting each metric on a separate line in "Metric: Value" format.
     metrics = {}
     for line in input_text.strip().split('|'):
         if '=' in line:
@@ -153,11 +153,11 @@ user_reports = ""
 current_conversation = ""
 assistant_response = ""
 
-summarizer = pipeline("summarization", model="Falconsai/medical_summarization")
-# summarizer = pipeline("summarization", model="google/bigbird-pegasus-large-pubmed")
+# Initialize the summarization pipeline.
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
 
 print("Welcome, I am your Personal Health Assistant. Type 'quit' or 'exit' to end the session.")
-print("To run the sleep metrics pipeline, please attach your health metrics data (each on a new line in the format 'Key: Value').\n")
+print("To run the health metrics pipeline, please attach your health metrics data (|Metric1=Value1|Metric2=Value2|...)\n")
 
 while True:
     user_input = input("User: ").strip()
@@ -179,9 +179,9 @@ while True:
             continue
 
         print(f"\nAssistant:")
-        # -------- Stage 1: Generate Insights --------
+        
+        # Generate Insights
         prompt1 = sleep_prompt_1.format(**health_data)
-        # print(prompt1)
         prompt1 = health_metrics_prompt_template.format(
             instruction=prompt1,
             input="",
@@ -191,9 +191,8 @@ while True:
         insights_response = generate_response(prompt1, max_tokens=1024)
         print("Sleep Insights Report:\n", insights_response, "\n")
         
-        # -------- Stage 2: Generate Etiology/Causes Report --------
+        # Generate Etiology/Causes Report
         prompt2 = sleep_prompt_2.format(insights_response=insights_response, **health_data)
-        # print(prompt2)
         prompt2 = health_metrics_prompt_template.format(
             instruction=prompt2,
             input="",
@@ -203,9 +202,8 @@ while True:
         etiology_response = generate_response(prompt2, max_tokens=1024)
         print("Causes Report:\n", etiology_response, "\n")
         
-        # -------- Stage 3: Generate Recommendations Report --------
+        # Generate Recommendations Report
         prompt3 = sleep_prompt_3.format(insights_response=insights_response, etiology_response=etiology_response, **health_data)
-        # print(prompt3)
         prompt3 = health_metrics_prompt_template.format(
             instruction=prompt3,
             input="",
@@ -216,15 +214,15 @@ while True:
         print("Recommendations Report:\n", recommendations_response, "\n")
 
         insights_reports = f"# Sleep Insights Report:\n\n{insights_response}"
-        # insights_reports = summarizer(insights_reports, max_length=200, min_length=150, do_sample=False)[0]['summary_text']
+        insights_reports = summarizer(insights_reports, max_length=200, min_length=150, do_sample=False)[0]['summary_text']
         # print(insights_reports)
 
         cause_reports = f"# Sleep Causes Report:\n\n{etiology_response}"
-        # cause_reports = summarizer(cause_reports, max_length=200, min_length=150, do_sample=False)[0]['summary_text']
+        cause_reports = summarizer(cause_reports, max_length=200, min_length=150, do_sample=False)[0]['summary_text']
         # print(cause_reports)
 
         recommendation_reports = f"# Sleep Recommendations Report:\n\n{recommendations_response}"
-        # recommendation_reports = summarizer(recommendation_reports, max_length=200, min_length=150, do_sample=False)[0]['summary_text']
+        recommendation_reports = summarizer(recommendation_reports, max_length=200, min_length=150, do_sample=False)[0]['summary_text']
         # print(recommendation_reports)
         user_reports = f"{insights_reports}\n\n{cause_reports}\n\n{recommendation_reports}"
 
@@ -236,7 +234,7 @@ while True:
             continue
     
     # print user reports
-    elif user_input.lower() == 'u': #
+    elif user_input.lower() == 'u':
             print("-"*20)
             print(f"User Reports: \n{user_reports}")
             print("-"*20)
@@ -266,14 +264,15 @@ while True:
     # generate new response for user's input query
     else:
         if current_conversation:
-            conversation_history += current_conversation
-            conversation_history += f"\nAssistant: {assistant_response}\n"
+            conversation_history += current_conversation[6:] # truncate "\n\nuser: "
+
+            # conversation_history += f"\nAssistant: {assistant_response}\n"
+            conversation_history += f"{assistant_response}\n"
         
         # Update current conversation history.
         current_conversation = f"\n\nUser: {user_input}"
 
         if len(tokenizer([conversation_history], return_tensors="pt").to(device).input_ids[0]) > 200:
-
             conversation_history = summarizer(conversation_history, max_length=150, min_length=100, do_sample=False)[0]['summary_text']
         
         prompt_input = chatbot_prompt_template.format(
